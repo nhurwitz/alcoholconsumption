@@ -1,0 +1,190 @@
+<!--  Interactive D3 Alcohol Consumption Bubble Chart 
+Data used is from fivethiryeight. -->
+
+<html>
+  <head>
+    <link href="index.css" rel="stylesheet">
+    <link href="colorbrewer/colorbrewer.css" rel="stylesheet">
+  </head>
+<body>
+<div id="title"> Interactive D3 Alcohol Consumption Bubble Chart </div>
+<div id="legend"></div>
+<div id="chart"></div>
+<script src="d3.min.js"></script>
+<script src="colorbrewer/colorbrewer.js"></script>
+<script src="jquery-1.11.1.min.js"></script>
+<script src="underscore-min.js"></script>
+<script src="bootstrap/js/bootstrap.min.js"></script>
+<script>
+
+var width = 960,
+    height = 500;
+
+var clusters = new Array(10);
+
+var force = d3.layout.force()
+    .size([width, height])
+    .on("tick", tick);
+
+var drag = force.drag()
+    .on("dragstart", dragstart);
+
+var svg = d3.select("#chart").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+var node = svg.selectAll(".node");
+
+var min = 100000, max = 0, nodeX = width/2, nodeY = height/2;
+var colorScale = d3.scale.quantize()
+    .range(colorbrewer.Paired[10]);
+
+d3.csv("data/drinks.csv", function(data) {
+  var maxRadius = d3.max(_.pluck(data, 'total_litres_of_pure_alcohol')) * 2;
+  var dataset = [];
+  var total = 0;
+  for(var i = 0; i < data.length; i++) {
+    var totalLitresValue = parseFloat(data[i]["total_litres_of_pure_alcohol"]);
+    min = totalLitresValue < min ? totalLitresValue : min;
+    max = totalLitresValue > max ? totalLitresValue : max;
+    var datum = {
+      x: nodeX,
+      y: nodeY,
+      radius: totalLitresValue * 2,
+      country: data[i]["country"],
+      total: totalLitresValue
+    };
+    dataset.push(datum);
+    var r = Math.sqrt((i + 1) / 10 * -Math.log(Math.random())) * maxRadius;
+    if (!clusters[i] || (r > clusters[i].radius)) clusters[data[i]["country"]] = datum;
+  }
+
+  colorScale.domain([min, max]);
+
+  force.nodes(dataset);
+
+  node = node.data(dataset)
+    .enter().append("circle")
+      .attr("class", "node")
+      .attr("r", function (d) {
+        return d.radius;
+      })
+      .attr("fill", function (d) {
+        return colorScale(d.total);
+      })
+      .attr("stroke", "none")
+      .on("dblclick", dblclick)
+      .on("mouseover", function (d) { 
+        showTooltip.call(this, d);
+        d3.select(this).attr("stroke", "black");
+        d3.select(this).attr("stroke-width", 2);
+       })
+      .on("mouseout", function (d) {
+        removeTooltip();
+        d3.select(this).attr("stroke", "none");
+       })
+      .call(drag);
+
+  force.start();
+  var legend = d3.select('#legend')
+  .append('ul')
+    .attr('class', 'list-inline');
+
+var keys = legend.selectAll('li.key')
+    .data(colorScale.range());
+
+keys.enter().append('li')
+    .attr('class', 'key')
+    .style('border-top-color', String)
+    .text(function(d) {
+        var r = colorScale.invertExtent(d);
+        return parseFloat(r[0]).toFixed(2) + "L ";
+    });
+
+});
+
+
+function tick(e) {
+  node
+      .each(cluster(10 * e.alpha * e.alpha))
+      .each(collide(0.5))
+      .attr("cx", function(d) { return d.x; })
+      .attr("cy", function(d) { return d.y; });
+}
+
+function dblclick(d) {
+  d3.select(this).classed("fixed", d.fixed = false);
+}
+
+function dragstart(d) {
+  d3.select(this).classed("fixed", d.fixed = true);
+}
+
+function removeTooltip () {
+  $('.popover').each(function() {
+    $(this).remove();
+  }); 
+}
+
+function showTooltip (d) {
+  $(this).popover({
+    placement: 'auto top',
+    container: 'body',
+    trigger: 'manual',
+    html : true,
+    content: function() { 
+      return "Country: " + d.country + "<br/>Total Litres of Pure Alcohol per Person per Year: " + d.total; }
+  });
+  $(this).popover('show')
+}
+
+// Move d to be adjacent to the cluster node.
+function cluster(alpha) {
+  return function(d) {
+    var cluster = clusters[d.country];
+    if (cluster === d) return;
+    var x = d.x - cluster.x,
+        y = d.y - cluster.y,
+        l = Math.sqrt(x * x + y * y),
+        r = d.radius + cluster.radius;
+    if (l != r) {
+      l = (l - r) / l * alpha;
+      d.x -= x *= l;
+      d.y -= y *= l;
+      cluster.x += x;
+      cluster.y += y;
+    }
+  };
+}
+
+function collide(alpha) {
+  var quadtree = d3.geom.quadtree(node[0]);
+  return function(d) {
+    var r = d.radius + 50,
+        nx1 = d.x - r,
+        nx2 = d.x + r,
+        ny1 = d.y - r,
+        ny2 = d.y + r;
+
+    quadtree.visit(function(quad, x1, y1, x2, y2) {
+      if (quad.point && (quad.point !== d)) {
+        var x = d.x - quad.point.x,
+            y = d.y - quad.point.y,
+            l = Math.sqrt(x * x + y * y),
+            r = d.radius + quad.point.radius + 50;
+        if (l < r) {
+          l = (l - r) / l * alpha;
+          d.x -= x *= l;
+          d.y -= y *= l;
+          quad.point.x += x;
+          quad.point.y += y;
+        }
+      }
+      return x1 > nx2 || x2 < nx1 || y1 > ny2 || y2 < ny1;
+    });
+  };
+}
+
+</script>
+</body>
+</html>
